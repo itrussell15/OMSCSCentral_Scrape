@@ -21,6 +21,8 @@ import time, datetime, sys
 import csv
 import urllib.parse
 import pandas as pd
+import nltk
+import numpy as np
 
 import matplotlib.pyplot as plt
 
@@ -31,7 +33,7 @@ class OMSCS_Scraper:
         if sys.platform == "win32":
             driverPath = os.getcwd() + "/chromedriver.exe"
         else:
-            driverPath = os.getcwd() + "/chromedriver"
+            driverPath = os.getcwd() + "/chromedriver" 
         options = Options()
         options.headless = True
         self._availableClasses = self._GetAvailableClasses()
@@ -46,7 +48,7 @@ class OMSCS_Scraper:
         try:
             className = self._GetAvailableClasses()[classId]
         except KeyError:
-            raise KeyError("Class Not In Available Class List")
+            raise KeyError("Class {} Not In Available Class List".format(classId))
             
         print("Gathering Data for {} {}".format(classId, className))
         class_ = self._OMSCS_Class(classId, className)
@@ -78,6 +80,9 @@ class OMSCS_Scraper:
                 temp.update({parse[0]: float(parse[1])})
             out.update({n: temp})
         return out
+    
+    def End(self):
+        self._driver.quit()
         
     
     class _OMSCS_Class:
@@ -136,21 +141,17 @@ class OMSCS_Scraper:
             ax[2].plot(x, rolling.values, color = "g")
         
         def CreateClassData(self, data):
-            self.classData = self._ClassData(data)
-            
-        # def ProcessReviews(self):
-        #     if self.classData:
-        #         averages = self.classData.GetStats()
+            self.classData = self._ClassData(data, self.className)
             
         class _ClassData:
             
-            def __init__(self, data_in):
+            def __init__(self, data_in, className):
+                self._className = className
                 self.rawData = data_in
                 self.dataFrame = self._createDF(data_in)
                 self._GenerateStats()
-                
-            # def __repr__(self):
-                
+                short_name = "".join([i[0].lower() for i in className.split(" ")])
+                self.sentiments = self._PreprocessSentiments(stop_words = [short_name, "omscs", "course", "class", "assignment", "assignments", "project"])
             
             def _createDF(self, data):
                 df = pd.DataFrame.from_dict(data).transpose()
@@ -162,8 +163,50 @@ class OMSCS_Scraper:
                 self.avgWorkload = avgs["Workload"]
                 self.avgDifficulty = avgs["Difficulty"]
                 self.numReviews = len(self.dataFrame)
-
-scrape = OMSCS_Scraper()
-class_ = scrape.GetClassData("CS-6476")
-class2 = scrape.GetClassData("CS-6300")
-class_.GraphData()
+                
+            def _PreprocessSentiments(self, stop_words = None):
+                stopwords = nltk.corpus.stopwords.words("english")
+                stopwords.extend(nltk.tokenize.word_tokenize(self._className.lower()))
+                if stop_words:
+                    stopwords.extend([i.lower() for i in stop_words])
+                output = {}
+                for i in self.rawData:
+                    tokens = nltk.tokenize.word_tokenize(self.rawData[i]["sentiment"])
+                    tokens = [w for w in tokens if w.lower() not in stopwords]
+                    tokens = [w.lower() for w in tokens if w.isalpha()]
+                    output.update({i: tokens})
+                return self._ClassSentiments(output)
+            
+            def commonWords(self, n):
+                fd = nltk.FreqDist(self.sentiments.flat)
+                dist = fd.most_common(n)
+                words = []
+                values = []
+                for i in dist:
+                    words.append(i[0].capitalize())
+                    values.append(i[1])
+                y_pos = np.arange(len(words))
+                plt.barh(y_pos, values, align = "center", alpha = 0.5)
+                plt.yticks(y_pos, words)
+                plt.title("Common Words from Reviews for {}".format(self._className))
+        
+            class _ClassSentiments:
+                
+                def __init__(self, data):
+                   self.raw = data
+                   self.flat = self._flatten()
+                
+                def _flatten(self):
+                    lol = [self.raw[i] for i in self.raw]
+                    return [x for xs in lol for x in xs]
+                
+if __name__ == "__main__":
+    
+    Scrape = OMSCS_Scraper()
+    class1 = Scrape.GetClassData("CS-7643")
+    # class2 = Scrape.GetClassData("CS-6300")
+    class1.classData.commonWords(20)
+    # print(class2.classData.sentiments.flat)
+    # class_.GraphData()
+    
+    Scrape.End()
