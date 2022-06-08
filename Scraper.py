@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Jun  5 15:47:45 2022
-
-@author: Schmuck
-"""
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -23,6 +16,7 @@ import urllib.parse
 import pandas as pd
 import nltk
 import numpy as np
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 import matplotlib.pyplot as plt
 
@@ -151,7 +145,7 @@ class OMSCS_Scraper:
                 self.dataFrame = self._createDF(data_in)
                 self._GenerateStats()
                 short_name = "".join([i[0].lower() for i in className.split(" ")])
-                self.sentiments = self._PreprocessSentiments(stop_words = [short_name, "omscs", "course", "class", "assignment", "assignments", "project"])
+                self.sentiments = self._PreprocessSentiments(stop_words = [short_name, "omscs", "course", "class", "assignment", "assignments", "project", "projects"])
             
             def _createDF(self, data):
                 df = pd.DataFrame.from_dict(data).transpose()
@@ -175,8 +169,9 @@ class OMSCS_Scraper:
                     tokens = [w for w in tokens if w.lower() not in stopwords]
                     tokens = [w.lower() for w in tokens if w.isalpha()]
                     output.update({i: tokens})
-                return self._ClassSentiments(output)
+                return self._ClassSentiments(output, [self.rawData[i]["sentiment"] for i in self.rawData])
             
+            # Graphs the top n common words found in the reviews left.
             def commonWords(self, n):
                 fd = nltk.FreqDist(self.sentiments.flat)
                 dist = fd.most_common(n)
@@ -190,23 +185,34 @@ class OMSCS_Scraper:
                 plt.yticks(y_pos, words)
                 plt.title("Common Words from Reviews for {}".format(self._className))
         
+            # Hoping to run sentiment analysis to see if there is a generally good or bad feeling about the course.
             class _ClassSentiments:
                 
-                def __init__(self, data):
-                   self.raw = data
+                def __init__(self, tokenized, raw_data):
+                   self.raw = raw_data
+                   self.tokenized = tokenized
                    self.flat = self._flatten()
+                   self._sia = SentimentIntensityAnalyzer()
                 
                 def _flatten(self):
-                    lol = [self.raw[i] for i in self.raw]
+                    lol = [self.tokenized[i] for i in self.tokenized]
                     return [x for xs in lol for x in xs]
+                
+                def analyze(self):
+                    # data = {n: self._processReview(i) for n, i in enumerate(self.raw)}
+                    data = [self._processReview(i) for i in self.raw]
+                    return data
+
+                def _processReview(self, review):
+                    return np.mean(np.array([self._sia.polarity_scores(sent)["compound"] for sent in nltk.sent_tokenize(review)]))
                 
 if __name__ == "__main__":
     
     Scrape = OMSCS_Scraper()
-    class1 = Scrape.GetClassData("CS-7643")
-    # class2 = Scrape.GetClassData("CS-6300")
-    class1.classData.commonWords(20)
-    # print(class2.classData.sentiments.flat)
-    # class_.GraphData()
+    class1 = Scrape.GetClassData("CS-7638")
+    class2 = Scrape.GetClassData("CS-6300")
+    sentData = [class1.classData.sentiments.analyze(), class2.classData.sentiments.analyze()]
+    print("HERE")
+    plt.boxplot(sentData)
     
     Scrape.End()
